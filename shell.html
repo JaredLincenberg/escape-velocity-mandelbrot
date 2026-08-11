@@ -494,6 +494,22 @@
   #capture-btn:hover { color: #05070c; background: var(--accent); }
   #capture-btn:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
 
+  #reset-values-btn {
+    display: block;
+    width: 100%;
+    background: transparent;
+    color: var(--ink-dim);
+    border: 1px solid rgba(125, 138, 163, 0.4);
+    font-family: inherit;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.55rem 0.2rem;
+    cursor: pointer;
+  }
+  #reset-values-btn:hover { color: var(--ink); border-color: var(--hot); }
+  #reset-values-btn:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+
   @media (prefers-reduced-motion: reduce) {
     .hud { transition: none; }
   }
@@ -585,6 +601,14 @@
       </div>
       <input type="range" id="ctl-swirl-speed" min="0.1" max="4" step="0.1" value="1">
       <button type="button" id="swirl-toggle" class="is-active" data-tip="Pause or resume the orbit-direction animation.">SWIRLING</button>
+      <div class="trace-step-row" style="margin-top: 0.55rem;">
+        <button type="button" id="swirl-iter-minus" aria-label="Previous iteration">−</button>
+        <input type="range" id="ctl-swirl-iter" min="2" max="200" step="1" value="2" data-tip="Scrub every strand's orbit to a specific iteration. Dragging pauses SWIRLING.">
+        <button type="button" id="swirl-iter-plus" aria-label="Next iteration">+</button>
+      </div>
+      <div class="label-row">
+        <span>Iteration <span id="swirl-iter-label">2</span> / 200</span>
+      </div>
     </div>
     <div class="panel-section">
       <div class="label-row" data-tip="Number of discrete escape-time color steps.">
@@ -602,6 +626,9 @@
         <button type="button" data-scheme="ice">Ice</button>
         <button type="button" data-scheme="rainbow">Rainbow</button>
       </div>
+    </div>
+    <div class="panel-section">
+      <button type="button" id="reset-values-btn" data-tip="Revert every slider to its starting value. Toggles, layers, and the color scheme are left as they are.">Reset Values</button>
     </div>
     <div class="panel-section">
       <button type="button" id="capture-btn" data-tip="Save the current view as a PNG.">Capture PNG</button>
