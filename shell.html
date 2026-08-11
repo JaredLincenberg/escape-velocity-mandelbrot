@@ -349,6 +349,24 @@
   #wave-toggle.is-active { color: #05070c; background: var(--accent); border-color: var(--accent); }
   #wave-toggle:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
 
+  #swirl-toggle {
+    display: block;
+    width: 100%;
+    margin-top: 0.4rem;
+    background: rgba(8, 12, 20, 0.9);
+    color: var(--ink-dim);
+    border: 1px solid rgba(125, 138, 163, 0.35);
+    font-family: inherit;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.4rem 0.2rem;
+    cursor: pointer;
+  }
+  #swirl-toggle:hover { color: var(--ink); }
+  #swirl-toggle.is-active { color: #05070c; background: var(--accent); border-color: var(--accent); }
+  #swirl-toggle:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+
   .scheme-row {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -561,6 +579,14 @@
       <button type="button" id="wave-toggle" class="is-active" data-tip="Freeze or resume the strand wind sway.">WAVING</button>
     </div>
     <div class="panel-section">
+      <div class="label-row" data-tip="Each strand leans toward its own orbit -- c → z₂ → z₃ → ... -- freezing once that point escapes.">
+        <span>Orbit swirl</span>
+        <input type="number" class="val" id="ctl-swirl-speed-val" value="1" min="0.1" max="4" step="0.1">
+      </div>
+      <input type="range" id="ctl-swirl-speed" min="0.1" max="4" step="0.1" value="1">
+      <button type="button" id="swirl-toggle" class="is-active" data-tip="Pause or resume the orbit-direction animation.">SWIRLING</button>
+    </div>
+    <div class="panel-section">
       <div class="label-row" data-tip="Number of discrete escape-time color steps.">
         <span>Color bands</span>
         <input type="number" class="val" id="ctl-bands-val" value="8" min="1" max="14" step="1">
@@ -595,7 +621,7 @@
       </div>
       <p class="legend-line"><strong>Height</strong> — escape speed. Taller strands take longer to leave the disk, i.e. sit closer to the set's boundary.</p>
       <p class="legend-line"><strong>Color</strong> — the same escape value, banded through the palette at right.</p>
-      <p class="legend-line"><strong>Lean</strong> — direction of steepest change in escape time (an external-ray-like pointer toward the boundary), plus wind on top.</p>
+      <p class="legend-line"><strong>Lean</strong> — each strand's own orbit direction, c → z₂ → z₃ → ..., swirling until that point escapes, then freezing; plus wind on top.</p>
       <p class="legend-line"><strong>Width</strong> — base thickness also tracks escape speed; each blade tapers to a point along its length.</p>
     </div>
     <div class="panel-section">

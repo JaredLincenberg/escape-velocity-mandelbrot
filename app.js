@@ -64,15 +64,16 @@
   }
 
   function computeField(nx, ny, xMin, xMax, yMin, yMax) {
-    // Pass 1: dense mu grid, including culled cells (as mu=0), so the
-    // gradient computed in pass 2 has a sensible value at every neighbor.
-    var muGrid = new Float32Array(nx * ny);
+    // Single pass: for every renderable point, keep its escape-time mu (for
+    // height/color) plus its own c and escape iteration -- everything the
+    // orbit-swirl direction system needs to animate that strand's own
+    // z0=0, z1=c, z2=z1^2+c, ... sequence later, without recomputing it.
+    var pts = [];
     for (var j = 0; j < ny; j++) {
       var cy = yMin + ((j + 0.5) / ny) * (yMax - yMin);
       for (var i = 0; i < nx; i++) {
         var cx = xMin + ((i + 0.5) / nx) * (xMax - xMin);
-        var idx = j * nx + i;
-        if (cx * cx + cy * cy > 4) continue; // |c| > 2 always escapes immediately -- mu stays 0
+        if (cx * cx + cy * cy > 4) continue; // |c| > 2 always escapes immediately -- not rendered
 
         var zx = 0, zy = 0, n = 0;
         var zx2 = 0, zy2 = 0;
@@ -82,31 +83,12 @@
           zx2 = zx * zx; zy2 = zy * zy;
           n++;
         }
-        if (n >= MAX_ITER) continue; // interior: never escapes -- mu stays 0
+        if (n >= MAX_ITER) continue; // interior: never escapes -- not rendered
 
         var logZn = Math.log(zx2 + zy2) / 2;
         var nu = Math.log(logZn / Math.LN2) / Math.LN2;
-        muGrid[idx] = Math.min(1, Math.max(0, (n + 1 - nu) / MAX_ITER));
-      }
-    }
-
-    // Pass 2: renderable points get a lean direction from the *gradient* of
-    // the escape-time field (an external-ray-like direction -- points away
-    // from fast-escaping regions toward the boundary), not from any single
-    // orbit. Cheap: it's just finite differences over the grid we already have.
-    var dx = (xMax - xMin) / nx, dy = (yMax - yMin) / ny;
-    var pts = [];
-    for (var jj = 0; jj < ny; jj++) {
-      for (var ii = 0; ii < nx; ii++) {
-        var mu = muGrid[jj * nx + ii];
-        if (mu <= 0) continue; // interior or outside the |c|<=2 disk -- not rendered
-
-        var iL = ii > 0 ? ii - 1 : ii, iR = ii < nx - 1 ? ii + 1 : ii;
-        var jD = jj > 0 ? jj - 1 : jj, jU = jj < ny - 1 ? jj + 1 : jj;
-        var gx = (muGrid[jj * nx + iR] - muGrid[jj * nx + iL]) / ((iR - iL || 1) * dx);
-        var gy = (muGrid[jU * nx + ii] - muGrid[jD * nx + ii]) / ((jU - jD || 1) * dy);
-        var glen = Math.sqrt(gx * gx + gy * gy) || 1;
-        pts.push({ i: ii, j: jj, mu: mu, dirx: gx / glen, diry: gy / glen });
+        var mu = Math.min(1, Math.max(0, (n + 1 - nu) / MAX_ITER));
+        pts.push({ i: i, j: j, mu: mu, cx: cx, cy: cy, escapeIter: n });
       }
     }
     return pts;
@@ -240,11 +222,13 @@
   var vertexShader = [
     'attribute float aMu;',
     'attribute float aPhase;',
-    'attribute vec2 aDir;',
+    'attribute vec2 aPrevDir;',
+    'attribute vec2 aCurDir;',
     'uniform float uTime;',
     'uniform float uSwayAmp;',
     'uniform float uSwaySpeed;',
     'uniform float uLeanAmount;',
+    'uniform float uSwirlFrac;',
     'uniform float uBands;',
     'uniform float uRainbow;',
     'uniform vec3 uDeep;',
@@ -278,10 +262,14 @@
     '  vec4 wp = instanceMatrix * vec4(localPos, 1.0);',
     '  float wind = sin(uTime * uSwaySpeed + aPhase + wp.x * 1.6 + wp.z * 0.9);',
     '  float wind2 = sin(uTime * uSwaySpeed * 0.6 + aPhase * 1.3 - wp.z * 1.1);',
-    // aDir is the gradient of the escape-time field (external-ray-like),
-    // used here to set each strand's resting lean; wind animates on top.
-    '  wp.x += bend * (aDir.x * uLeanAmount + uSwayAmp * wind);',
-    '  wp.z += bend * (aDir.y * uLeanAmount + uSwayAmp * 0.4 * wind2);',
+    // Each strand leans toward its OWN orbit: direction from c to z_k,
+    // smoothly interpolated between the last two computed steps (aPrevDir
+    // -> aCurDir) as the shared swirl clock advances; wind animates on top.
+    '  vec2 mixedDir = mix(aPrevDir, aCurDir, uSwirlFrac);',
+    '  float mixedLen = length(mixedDir);',
+    '  vec2 dir = mixedLen > 0.0001 ? mixedDir / mixedLen : aCurDir;',
+    '  wp.x += bend * (dir.x * uLeanAmount + uSwayAmp * wind);',
+    '  wp.z += bend * (dir.y * uLeanAmount + uSwayAmp * 0.4 * wind2);',
     '  gl_Position = projectionMatrix * modelViewMatrix * wp;',
     '}'
   ].join('\n');
@@ -306,6 +294,7 @@
       uSwayAmp: { value: 0.035 },
       uSwaySpeed: { value: 0.9 },
       uLeanAmount: { value: 0.15 },
+      uSwirlFrac: { value: 0 },
       uBands: { value: params.bands },
       uRainbow: { value: activeScheme.rainbow ? 1 : 0 },
       uDeep: { value: new THREE.Vector3().fromArray(activeScheme.deep) },
@@ -360,6 +349,69 @@
     }
   }
 
+  // ---------- Orbit-swirl direction state ----------
+  // Every strand leans toward its own orbit -- c -> z2 -> z3 -> ... --
+  // instead of the field's gradient. Advancing the whole set by one
+  // iteration is O(count) (one complex multiply-add per point), so a
+  // shared slow clock can step every strand's state in place each tick
+  // rather than needing to store or replay each point's full history.
+  var swirl = null; // { count, cx, cy, zx, zy, step, escIter, prevDir, curDir }
+  var swirlIterFloat = 2; // matches the "start pointing at z2" initial pose
+  var swirlEnabled = true;
+  var swirlSpeed = 1.0; // iterations per second
+
+  function mandelStep(zx, zy, cx, cy) {
+    var zx2 = zx * zx, zy2 = zy * zy;
+    return { x: zx2 - zy2 + cx, y: 2 * zx * zy + cy };
+  }
+
+  function initSwirl(field, count) {
+    var cx = new Float32Array(count), cy = new Float32Array(count);
+    var zx = new Float32Array(count), zy = new Float32Array(count);
+    var step = new Int32Array(count), escIter = new Int32Array(count);
+    var prevDir = new Float32Array(count * 2), curDir = new Float32Array(count * 2);
+    for (var k = 0; k < count; k++) {
+      var p = field[k];
+      cx[k] = p.cx; cy[k] = p.cy;
+      escIter[k] = p.escapeIter;
+      var z2 = mandelStep(p.cx, p.cy, p.cx, p.cy); // z1 = c, so z2 = z1^2 + c
+      zx[k] = z2.x; zy[k] = z2.y;
+      step[k] = 2;
+      var dx = z2.x - p.cx, dy = z2.y - p.cy;
+      var len = Math.sqrt(dx * dx + dy * dy) || 1;
+      curDir[k * 2] = dx / len; curDir[k * 2 + 1] = dy / len;
+      prevDir[k * 2] = curDir[k * 2]; prevDir[k * 2 + 1] = curDir[k * 2 + 1];
+    }
+    return { count: count, cx: cx, cy: cy, zx: zx, zy: zy, step: step, escIter: escIter, prevDir: prevDir, curDir: curDir };
+  }
+
+  function advanceSwirlStep() {
+    if (!swirl) return;
+    var cx = swirl.cx, cy = swirl.cy, zx = swirl.zx, zy = swirl.zy;
+    var step = swirl.step, escIter = swirl.escIter, prevDir = swirl.prevDir, curDir = swirl.curDir;
+    for (var k = 0; k < swirl.count; k++) {
+      if (step[k] >= escIter[k]) continue; // already escaped -- frozen
+      prevDir[k * 2] = curDir[k * 2]; prevDir[k * 2 + 1] = curDir[k * 2 + 1];
+      var z = mandelStep(zx[k], zy[k], cx[k], cy[k]);
+      zx[k] = z.x; zy[k] = z.y;
+      step[k]++;
+      var dx = z.x - cx[k], dy = z.y - cy[k];
+      var len = Math.sqrt(dx * dx + dy * dy) || 1;
+      curDir[k * 2] = dx / len; curDir[k * 2 + 1] = dy / len;
+      if (step[k] >= escIter[k]) {
+        // Reached the escape step this tick -- collapse prev into cur so
+        // interpolation goes inert instead of swinging forever between
+        // the last two directions.
+        prevDir[k * 2] = curDir[k * 2]; prevDir[k * 2 + 1] = curDir[k * 2 + 1];
+      }
+    }
+    if (mesh) {
+      var attrs = mesh.geometry.attributes;
+      if (attrs.aPrevDir) attrs.aPrevDir.needsUpdate = true;
+      if (attrs.aCurDir) attrs.aCurDir.needsUpdate = true;
+    }
+  }
+
   function buildField() {
     disposeField();
 
@@ -378,7 +430,8 @@
 
     var mus = new Float32Array(count);
     var phases = new Float32Array(count);
-    var dirs = new Float32Array(count * 2);
+    swirl = initSwirl(field, count);
+    swirlIterFloat = 2; // fresh field -- restart every strand's swirl clock at z2
 
     mesh = new THREE.InstancedMesh(bladeGeo, material, count);
 
@@ -400,12 +453,12 @@
 
       mus[k] = p.mu;
       phases[k] = Math.random() * Math.PI * 2;
-      dirs[k * 2] = p.dirx; dirs[k * 2 + 1] = p.diry;
     }
     mesh.instanceMatrix.needsUpdate = true;
     bladeGeo.setAttribute('aMu', new THREE.InstancedBufferAttribute(mus, 1));
     bladeGeo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(phases, 1));
-    bladeGeo.setAttribute('aDir', new THREE.InstancedBufferAttribute(dirs, 2));
+    bladeGeo.setAttribute('aPrevDir', new THREE.InstancedBufferAttribute(swirl.prevDir, 2));
+    bladeGeo.setAttribute('aCurDir', new THREE.InstancedBufferAttribute(swirl.curDir, 2));
     mesh.visible = layers.strands;
     scene.add(mesh);
 
@@ -834,6 +887,17 @@
       });
     }
 
+    pairControl('swirl-speed', function (v) { swirlSpeed = v; }, true);
+
+    var swirlToggle = document.getElementById('swirl-toggle');
+    if (swirlToggle) {
+      swirlToggle.addEventListener('click', function () {
+        swirlEnabled = !swirlEnabled;
+        swirlToggle.textContent = swirlEnabled ? 'SWIRLING' : 'STILL';
+        swirlToggle.classList.toggle('is-active', swirlEnabled);
+      });
+    }
+
     var captureBtn = document.getElementById('capture-btn');
     if (captureBtn) captureBtn.addEventListener('click', capturePNG);
 
@@ -946,6 +1010,18 @@
     var dt = clock.getDelta();
     var t = clock.elapsedTime;
     material.uniforms.uTime.value = t;
+
+    if (swirlEnabled) {
+      var swirlDt = Math.min(dt, 0.25); // clamp so a backgrounded-tab catch-up can't spike the loop
+      swirlIterFloat += swirlDt * swirlSpeed;
+      var guard = 0;
+      while (Math.floor(swirlIterFloat) > (swirl ? swirl.lastStepped || 2 : 2) && guard < 8) {
+        advanceSwirlStep();
+        if (swirl) swirl.lastStepped = (swirl.lastStepped || 2) + 1;
+        guard++;
+      }
+    }
+    material.uniforms.uSwirlFrac.value = swirlIterFloat - Math.floor(swirlIterFloat);
 
     fpsFrames++;
     fpsAccum += Math.min(dt, 0.1); // clamp so one slow/startup frame can't skew the reading
