@@ -55,3 +55,7 @@ python3 build.py
 This project was vibe-coded collaboratively: the repo owner drove direction,
 feedback, and each round of iteration; [Claude Code](https://claude.com/claude-code)
 filled in the implementation details and wrote the code.
+
+## License
+
+[CC BY 4.0](LICENSE) — free to share and adapt, with attribution.
