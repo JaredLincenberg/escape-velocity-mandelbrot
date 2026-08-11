@@ -1,0 +1,619 @@
+<title>Escape Velocity — a Mandelbrot hair field</title>
+<style>
+  @font-face {
+    font-family: 'Fraunces';
+    font-style: normal;
+    font-weight: 700;
+    src: url(data:font/woff2;base64,__FRAUNCES_B64__) format('woff2');
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'IBM Plex Mono';
+    font-style: normal;
+    font-weight: 400;
+    src: url(data:font/woff2;base64,__PLEXMONO400_B64__) format('woff2');
+    font-display: swap;
+  }
+  @font-face {
+    font-family: 'IBM Plex Mono';
+    font-style: normal;
+    font-weight: 500;
+    src: url(data:font/woff2;base64,__PLEXMONO500_B64__) format('woff2');
+    font-display: swap;
+  }
+
+  :root {
+    --bg: #05070c;
+    --ink: #e8edf5;
+    --ink-dim: #7d8aa3;
+    --accent: #4fa8c9;
+    --hot: #ffb454;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+  }
+
+  #gl {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    background: var(--bg);
+  }
+  /* #flat is never shown directly -- it's only a texture source for the ground */
+  #flat { display: none; }
+
+  .vignette {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at 50% 60%, rgba(5,7,12,0) 45%, rgba(5,7,12,0.75) 100%);
+  }
+
+  .hud {
+    position: fixed;
+    left: clamp(1.25rem, 4vw, 3rem);
+    bottom: clamp(1.25rem, 4vw, 3rem);
+    max-width: min(90vw, 34rem);
+    color: var(--ink);
+    pointer-events: none;
+  }
+
+  .hud .eyebrow {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-weight: 500;
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 0.5rem;
+  }
+
+  .hud h1 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-weight: 700;
+    font-size: clamp(2.1rem, 6vw, 3.6rem);
+    line-height: 1.02;
+    letter-spacing: -0.01em;
+    margin: 0 0 0.65rem;
+    text-wrap: balance;
+    color: var(--ink);
+  }
+
+  .hud .caption {
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    color: var(--ink-dim);
+    margin: 0;
+  }
+
+  .panel {
+    position: fixed;
+    top: clamp(1rem, 3vw, 2rem);
+    right: clamp(1rem, 3vw, 2rem);
+    width: 17rem;
+    max-width: calc(100vw - 2rem);
+    background: rgba(8, 12, 20, 0.72);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(79, 168, 201, 0.28);
+    color: var(--ink);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace;
+    padding: 0.9rem 1rem 1.1rem;
+    z-index: 10;
+  }
+
+  .panel-left {
+    left: clamp(1rem, 3vw, 2rem);
+    right: auto;
+    width: 16rem;
+  }
+
+  .panel.is-collapsed .panel-body { display: none; }
+
+  .panel-body {
+    max-height: calc(100vh - 8rem);
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(79, 168, 201, 0.5) transparent;
+  }
+  .panel-body::-webkit-scrollbar { width: 6px; }
+  .panel-body::-webkit-scrollbar-thumb { background: rgba(79, 168, 201, 0.5); }
+
+  .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.7rem;
+  }
+
+  .panel-head .eyebrow2 {
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .panel-head .fps {
+    font-size: 0.68rem;
+    color: var(--ink-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  #panel-toggle {
+    background: transparent;
+    border: 1px solid rgba(125, 138, 163, 0.4);
+    color: var(--ink-dim);
+    font-family: inherit;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    padding: 0.15rem 0.5rem;
+    cursor: pointer;
+  }
+  #panel-toggle:hover { color: var(--ink); border-color: var(--accent); }
+  #panel-toggle:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+
+  .panel-section { margin-bottom: 0.85rem; }
+  .panel-section:last-child { margin-bottom: 0; }
+
+  .panel-section .label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    margin-bottom: 0.3rem;
+    position: relative;
+  }
+  .panel-section input[type="range"] { margin-bottom: 0.6rem; }
+  .panel-section input[type="range"]:last-child { margin-bottom: 0; }
+
+  input.val {
+    -moz-appearance: textfield;
+    width: 3.8rem;
+    flex: 0 0 auto;
+    text-align: right;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid transparent;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: normal;
+    text-transform: none;
+    padding: 0 0 1px;
+    cursor: text;
+  }
+  input.val::-webkit-outer-spin-button,
+  input.val::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input.val:hover { border-bottom-color: rgba(125, 138, 163, 0.5); }
+  input.val:focus-visible {
+    outline: none;
+    border-bottom-color: var(--accent);
+  }
+
+  /* Tooltips: hover/focus a label row to see what the control does */
+  [data-tip] { position: relative; }
+  [data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    right: 0;
+    bottom: 100%;
+    margin-bottom: 0.35rem;
+    background: #0b1018;
+    color: var(--ink);
+    border: 1px solid rgba(79, 168, 201, 0.4);
+    font-size: 0.65rem;
+    line-height: 1.4;
+    letter-spacing: normal;
+    text-transform: none;
+    padding: 0.4rem 0.55rem;
+    width: max-content;
+    max-width: 12rem;
+    z-index: 20;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(2px);
+    transition: opacity 0.12s ease, transform 0.12s ease;
+  }
+  [data-tip]:hover::after,
+  [data-tip]:focus-within::after,
+  [data-tip]:focus-visible::after {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-tip]::after { transition: none; }
+  }
+
+  input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(125, 138, 163, 0.35);
+    outline: none;
+    margin: 0.65rem 0;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid #05070c;
+    cursor: pointer;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #05070c;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+  input[type="range"]::-moz-range-track {
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(125, 138, 163, 0.35);
+  }
+  input[type="range"]:hover::-webkit-slider-thumb { background: var(--hot); }
+  input[type="range"]:hover::-moz-range-thumb { background: var(--hot); }
+  input[type="range"]:focus-visible {
+    outline: 2px solid var(--hot);
+    outline-offset: 3px;
+  }
+
+  .preset-row {
+    display: flex;
+    gap: 1px;
+    background: rgba(125, 138, 163, 0.28);
+    margin-top: 0.3rem;
+  }
+  .preset-row button {
+    flex: 1;
+    background: rgba(8, 12, 20, 0.9);
+    color: var(--ink-dim);
+    border: none;
+    font-family: inherit;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.4rem 0.2rem;
+    cursor: pointer;
+  }
+  .preset-row button:hover { color: var(--ink); }
+  .preset-row button.is-active { color: #05070c; background: var(--accent); }
+  .preset-row button:focus-visible { outline: 2px solid var(--hot); outline-offset: -2px; }
+
+  #spin-toggle {
+    display: block;
+    width: 100%;
+    margin-top: 0.4rem;
+    background: rgba(8, 12, 20, 0.9);
+    color: var(--ink-dim);
+    border: 1px solid rgba(125, 138, 163, 0.35);
+    font-family: inherit;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.4rem 0.2rem;
+    cursor: pointer;
+  }
+  #spin-toggle:hover { color: var(--ink); }
+  #spin-toggle.is-active { color: #05070c; background: var(--accent); border-color: var(--accent); }
+  #spin-toggle:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+
+  #wave-toggle {
+    display: block;
+    width: 100%;
+    background: rgba(8, 12, 20, 0.9);
+    color: var(--ink-dim);
+    border: 1px solid rgba(125, 138, 163, 0.35);
+    font-family: inherit;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.4rem 0.2rem;
+    cursor: pointer;
+  }
+  #wave-toggle:hover { color: var(--ink); }
+  #wave-toggle.is-active { color: #05070c; background: var(--accent); border-color: var(--accent); }
+  #wave-toggle:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+
+  .scheme-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .scheme-row button {
+    font-size: 0.6rem;
+    letter-spacing: 0.02em;
+    padding: 0.4rem 0.1rem;
+  }
+
+  .legend-line {
+    margin: 0 0 0.35rem;
+    font-size: 0.66rem;
+    line-height: 1.5;
+    letter-spacing: normal;
+    text-transform: none;
+    color: var(--ink-dim);
+  }
+  .legend-line:last-child { margin-bottom: 0; }
+  .legend-line strong { color: var(--ink); font-weight: 500; }
+
+  #trace-pick {
+    display: block;
+    width: 100%;
+    margin-bottom: 0.5rem;
+    background: rgba(8, 12, 20, 0.9);
+    color: var(--ink-dim);
+    border: 1px solid rgba(125, 138, 163, 0.35);
+    font-family: inherit;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.4rem 0.2rem;
+    cursor: pointer;
+  }
+  #trace-pick:hover { color: var(--ink); }
+  #trace-pick.is-active { color: #05070c; background: var(--hot); border-color: var(--hot); }
+  #trace-pick:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+
+  .trace-info {
+    margin: 0 0 0.55rem;
+    font-size: 0.65rem;
+    line-height: 1.45;
+    color: var(--ink-dim);
+    letter-spacing: normal;
+    text-transform: none;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .trace-step-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+  }
+  .trace-step-row input[type="range"] { flex: 1; margin: 0; }
+  .trace-step-row button {
+    flex: 0 0 auto;
+    width: 1.7rem;
+    height: 1.7rem;
+    background: rgba(8, 12, 20, 0.9);
+    color: var(--ink-dim);
+    border: 1px solid rgba(125, 138, 163, 0.35);
+    font-family: inherit;
+    font-size: 0.9rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .trace-step-row button:hover:not(:disabled) { color: var(--ink); border-color: var(--accent); }
+  .trace-step-row button:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+
+  #trace-play {
+    display: block;
+    width: 100%;
+    background: rgba(8, 12, 20, 0.9);
+    color: var(--ink-dim);
+    border: 1px solid rgba(125, 138, 163, 0.35);
+    font-family: inherit;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.4rem 0.2rem;
+    cursor: pointer;
+  }
+  #trace-play:hover:not(:disabled) { color: var(--ink); }
+  #trace-play.is-active { color: #05070c; background: var(--accent); border-color: var(--accent); }
+  #trace-play:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+
+  #trace-clear {
+    display: block;
+    width: 100%;
+    margin-top: 0.4rem;
+    background: transparent;
+    color: var(--ink-dim);
+    border: 1px solid rgba(125, 138, 163, 0.35);
+    font-family: inherit;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.4rem 0.2rem;
+    cursor: pointer;
+  }
+  #trace-clear:hover:not(:disabled) { color: var(--ink); border-color: var(--hot); }
+  #trace-clear:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+
+  input[type="range"]:disabled,
+  button:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  #capture-btn {
+    display: block;
+    width: 100%;
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    font-family: inherit;
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.55rem 0.2rem;
+    cursor: pointer;
+  }
+  #capture-btn:hover { color: #05070c; background: var(--accent); }
+  #capture-btn:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .hud { transition: none; }
+  }
+</style>
+
+<canvas id="gl"></canvas>
+<canvas id="flat"></canvas>
+<div class="vignette"></div>
+
+<div class="hud">
+  <p class="eyebrow">z &#8614; z&sup2; + c</p>
+  <h1>Escape Velocity</h1>
+  <p class="caption">
+    <span id="stat-count">&mdash;</span> strands &middot; escape time &le; 200 iterations<br>
+    <span id="stat-bounds">&#8476; &isin; [&minus;2.50, 1.00]&nbsp;&nbsp;&#8465; &isin; [&minus;1.25, 1.25]i</span>
+  </p>
+</div>
+
+<div class="panel" id="panel">
+  <div class="panel-head">
+    <span class="eyebrow2">Controls</span>
+    <span class="fps" id="fps-readout" data-tip="Rendering frame rate, averaged every half second.">&mdash; fps</span>
+    <button id="panel-toggle" type="button" aria-expanded="true" data-tip="Show or hide this panel.">HIDE</button>
+  </div>
+  <div class="panel-body">
+    <div class="panel-section">
+      <div class="label-row" data-tip="Show or hide each layer independently.">
+        <span>Layers</span>
+      </div>
+      <div class="preset-row">
+        <button type="button" id="layer-strands" class="is-active" data-tip="The wind-swept strand field.">Strands</button>
+        <button type="button" id="layer-ground" class="is-active" data-tip="The fractal-textured ground beneath it.">Ground</button>
+      </div>
+    </div>
+    <div class="panel-section">
+      <div class="label-row" data-tip="Grid resolution. Higher = more strands, slower to rebuild.">
+        <span>Density</span>
+        <input type="number" class="val" id="ctl-density-val" value="170" min="90" max="240" step="1">
+      </div>
+      <input type="range" id="ctl-density" min="90" max="240" step="5" value="170">
+    </div>
+    <div class="panel-section">
+      <div class="label-row" data-tip="Real-axis (horizontal) center of the rendered region.">
+        <span>Real center</span>
+        <input type="number" class="val" id="ctl-cre-val" value="-0.75" min="-2.2" max="1.2" step="0.01">
+      </div>
+      <input type="range" id="ctl-cre" min="-2.2" max="1.2" step="0.01" value="-0.75">
+      <div class="label-row" data-tip="Imaginary-axis (vertical) center of the rendered region.">
+        <span>Imaginary center</span>
+        <input type="number" class="val" id="ctl-cim-val" value="0" min="-1.5" max="1.5" step="0.01">
+      </div>
+      <input type="range" id="ctl-cim" min="-1.5" max="1.5" step="0.01" value="0">
+      <div class="label-row" data-tip="Width of the rendered region. Smaller = zoomed in further.">
+        <span>View span</span>
+        <input type="number" class="val" id="ctl-span-val" value="3.5" min="0.05" max="3.5" step="0.01">
+      </div>
+      <input type="range" id="ctl-span" min="0.05" max="3.5" step="0.01" value="3.5">
+    </div>
+    <div class="panel-section">
+      <div class="label-row" data-tip="Real zoom: moves the camera in AND crops the rendered region to a smaller area, at the same resolution. Same as scroll-to-zoom.">
+        <span>Zoom</span>
+        <input type="number" class="val" id="ctl-zoom-val" value="3.05" min="0.15" max="6.0" step="0.01">
+      </div>
+      <input type="range" id="ctl-zoom" min="0.15" max="6.0" step="0.01" value="3.05">
+      <div class="preset-row">
+        <button type="button" id="preset-full" class="is-active" data-tip="Wide framing of the whole field.">Full</button>
+        <button type="button" id="preset-edge" data-tip="Low, grazing view along the boundary ring.">Edge</button>
+        <button type="button" id="preset-tip" data-tip="Close-up on a single spike cluster.">Tip</button>
+      </div>
+    </div>
+    <div class="panel-section">
+      <div class="label-row" data-tip="Camera rotation speed while idle (untouched for 1.2s).">
+        <span>Idle spin</span>
+        <input type="number" class="val" id="ctl-spin-speed-val" value="0.05" min="0" max="0.15" step="0.005">
+      </div>
+      <input type="range" id="ctl-spin-speed" min="0" max="0.15" step="0.005" value="0.05">
+      <button type="button" id="spin-toggle" class="is-active" data-tip="Pause or resume the idle camera rotation.">SPINNING</button>
+    </div>
+    <div class="panel-section">
+      <div class="label-row" data-tip="The wind sway animating through the strands.">
+        <span>Wind</span>
+      </div>
+      <button type="button" id="wave-toggle" class="is-active" data-tip="Freeze or resume the strand wind sway.">WAVING</button>
+    </div>
+    <div class="panel-section">
+      <div class="label-row" data-tip="Number of discrete escape-time color steps.">
+        <span>Color bands</span>
+        <input type="number" class="val" id="ctl-bands-val" value="8" min="1" max="14" step="1">
+      </div>
+      <input type="range" id="ctl-bands" min="1" max="14" step="1" value="8">
+      <div class="label-row" data-tip="Palette used for both the strands and the ground.">
+        <span>Color scheme</span>
+      </div>
+      <div class="preset-row scheme-row">
+        <button type="button" data-scheme="ember" class="is-active">Ember</button>
+        <button type="button" data-scheme="violet">Violet</button>
+        <button type="button" data-scheme="verdant">Verdant</button>
+        <button type="button" data-scheme="ice">Ice</button>
+        <button type="button" data-scheme="rainbow">Rainbow</button>
+      </div>
+    </div>
+    <div class="panel-section">
+      <button type="button" id="capture-btn" data-tip="Save the current view as a PNG.">Capture PNG</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel panel-left" id="panel-left">
+  <div class="panel-head">
+    <span class="eyebrow2">Field guide</span>
+    <button id="panel-toggle-left" type="button" aria-expanded="true" data-tip="Show or hide this panel.">HIDE</button>
+  </div>
+  <div class="panel-body">
+    <div class="panel-section">
+      <div class="label-row" data-tip="What each part of a strand encodes.">
+        <span>Field legend</span>
+      </div>
+      <p class="legend-line"><strong>Height</strong> — escape speed. Taller strands take longer to leave the disk, i.e. sit closer to the set's boundary.</p>
+      <p class="legend-line"><strong>Color</strong> — the same escape value, banded through the palette at right.</p>
+      <p class="legend-line"><strong>Lean</strong> — direction of steepest change in escape time (an external-ray-like pointer toward the boundary), plus wind on top.</p>
+      <p class="legend-line"><strong>Width</strong> — base thickness also tracks escape speed; each blade tapers to a point along its length.</p>
+    </div>
+    <div class="panel-section">
+      <div class="label-row" data-tip="Click any point on the field to trace its actual escape sequence, z0=0, z1=c, z2=z1²+c, ...">
+        <span>Escape trace</span>
+      </div>
+      <button type="button" id="trace-pick" data-tip="Toggle on, then click a point on the field.">PICK POINT</button>
+      <p class="trace-info" id="trace-info">Click “pick point,” then click anywhere on the field.</p>
+      <div class="trace-step-row">
+        <button type="button" id="trace-minus" aria-label="Previous iteration" disabled>−</button>
+        <input type="range" id="ctl-trace-iter" min="0" max="0" step="1" value="0" disabled>
+        <button type="button" id="trace-plus" aria-label="Next iteration" disabled>+</button>
+      </div>
+      <div class="label-row">
+        <span>Iteration <span id="trace-iter-label">0</span> / <span id="trace-iter-max">0</span></span>
+      </div>
+      <button type="button" id="trace-play" data-tip="Auto-step slowly through the sequence." disabled>PLAY</button>
+      <button type="button" id="trace-clear" data-tip="Remove the current trace." disabled>CLEAR TRACE</button>
+    </div>
+  </div>
+</div>
+
+<script>
+__THREE_JS__
+</script>
+<script>
+__APP_JS__
+</script>
