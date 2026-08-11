@@ -70,12 +70,16 @@
 
   .hud .eyebrow {
     font-family: 'IBM Plex Mono', ui-monospace, monospace;
-    font-weight: 500;
-    font-size: 0.78rem;
+    font-weight: 400;
+    font-size: 0.9rem;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: var(--accent);
+    color: #6fc2e0;
     margin: 0 0 0.5rem;
+  }
+  .hud .eyebrow strong,
+  .hud .caption strong {
+    font-weight: 500; /* the loaded Plex Mono "medium" -- 700 isn't embedded, avoids faux-bold */
   }
 
   .hud h1 {
@@ -92,9 +96,9 @@
   .hud .caption {
     font-family: 'IBM Plex Mono', ui-monospace, monospace;
     font-variant-numeric: tabular-nums;
-    font-size: 0.82rem;
+    font-size: 0.9rem;
     line-height: 1.55;
-    color: var(--ink-dim);
+    color: #98a4bd;
     margin: 0;
   }
 
@@ -152,7 +156,8 @@
     font-variant-numeric: tabular-nums;
   }
 
-  #panel-toggle {
+  #panel-toggle,
+  #panel-toggle-left {
     background: transparent;
     border: 1px solid rgba(125, 138, 163, 0.4);
     color: var(--ink-dim);
@@ -162,8 +167,10 @@
     padding: 0.15rem 0.5rem;
     cursor: pointer;
   }
-  #panel-toggle:hover { color: var(--ink); border-color: var(--accent); }
-  #panel-toggle:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
+  #panel-toggle:hover,
+  #panel-toggle-left:hover { color: var(--ink); border-color: var(--accent); }
+  #panel-toggle:focus-visible,
+  #panel-toggle-left:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
 
   .panel-section { margin-bottom: 0.85rem; }
   .panel-section:last-child { margin-bottom: 0; }
@@ -378,7 +385,7 @@
     cursor: pointer;
   }
   #trace-pick:hover { color: var(--ink); }
-  #trace-pick.is-active { color: #05070c; background: var(--hot); border-color: var(--hot); }
+  #trace-pick.is-active { color: #05070c; background: var(--accent); border-color: var(--accent); }
   #trace-pick:focus-visible { outline: 2px solid var(--hot); outline-offset: 2px; }
 
   .trace-info {
@@ -479,10 +486,10 @@
 <div class="vignette"></div>
 
 <div class="hud">
-  <p class="eyebrow">z &#8614; z&sup2; + c</p>
+  <p class="eyebrow">z <strong>&#8614;</strong> z<strong>&sup2;</strong> <strong>+</strong> c</p>
   <h1>Escape Velocity</h1>
   <p class="caption">
-    <span id="stat-count">&mdash;</span> strands &middot; escape time &le; 200 iterations<br>
+    <span id="stat-count">&mdash;</span> strands <strong>&middot;</strong> escape time <strong>&le;</strong> 200 iterations<br>
     <span id="stat-bounds">&#8476; &isin; [&minus;2.50, 1.00]&nbsp;&nbsp;&#8465; &isin; [&minus;1.25, 1.25]i</span>
   </p>
 </div>
@@ -1036,8 +1043,10 @@
     updateHUD();
     var boundsEl = document.getElementById('stat-bounds');
     if (boundsEl) {
-      boundsEl.textContent = 'ℜ ∈ [' + xMin.toFixed(2) + ', ' + xMax.toFixed(2) + ']' +
-        '  ℑ ∈ [' + yMin.toFixed(2) + ', ' + yMax.toFixed(2) + ']i';
+      // innerHTML is safe here -- every interpolated value is a toFixed()
+      // float, never user-supplied text.
+      boundsEl.innerHTML = '<strong>ℜ</strong> <strong>∈</strong> [' + xMin.toFixed(2) + ', ' + xMax.toFixed(2) + ']' +
+        '&nbsp;&nbsp;<strong>ℑ</strong> <strong>∈</strong> [' + yMin.toFixed(2) + ', ' + yMax.toFixed(2) + ']i';
     }
   }
 
@@ -1473,7 +1482,7 @@
     if (tracePickBtn) {
       tracePickBtn.addEventListener('click', function () {
         traceMode = !traceMode;
-        tracePickBtn.textContent = traceMode ? 'CLICK THE FIELD…' : 'PICK POINT';
+        tracePickBtn.textContent = traceMode ? 'CLICK THE FIELD' : 'PICK POINT';
         tracePickBtn.classList.toggle('is-active', traceMode);
         dom.style.cursor = traceMode ? 'crosshair' : 'grab';
       });

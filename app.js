@@ -413,8 +413,10 @@
     updateHUD();
     var boundsEl = document.getElementById('stat-bounds');
     if (boundsEl) {
-      boundsEl.textContent = 'ℜ ∈ [' + xMin.toFixed(2) + ', ' + xMax.toFixed(2) + ']' +
-        '  ℑ ∈ [' + yMin.toFixed(2) + ', ' + yMax.toFixed(2) + ']i';
+      // innerHTML is safe here -- every interpolated value is a toFixed()
+      // float, never user-supplied text.
+      boundsEl.innerHTML = '<strong>ℜ</strong> <strong>∈</strong> [' + xMin.toFixed(2) + ', ' + xMax.toFixed(2) + ']' +
+        '&nbsp;&nbsp;<strong>ℑ</strong> <strong>∈</strong> [' + yMin.toFixed(2) + ', ' + yMax.toFixed(2) + ']i';
     }
   }
 
@@ -850,7 +852,7 @@
     if (tracePickBtn) {
       tracePickBtn.addEventListener('click', function () {
         traceMode = !traceMode;
-        tracePickBtn.textContent = traceMode ? 'CLICK THE FIELD…' : 'PICK POINT';
+        tracePickBtn.textContent = traceMode ? 'CLICK THE FIELD' : 'PICK POINT';
         tracePickBtn.classList.toggle('is-active', traceMode);
         dom.style.cursor = traceMode ? 'crosshair' : 'grab';
       });
